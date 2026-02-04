@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+.climate-crisis {
+  font-family: 'Climate Crisis', sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: 'YEAR' 1979;
+}
+
+.dm-serif-text {
+  font-family: 'DM Serif Text', serif;
+}
+
+.google-sans {
+  font-family: 'Google Sans', sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings: 'GRAD' 0;
+}
