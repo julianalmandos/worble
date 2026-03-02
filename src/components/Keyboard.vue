@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { GuessLetterStatus } from './Game.vue'
 import { onMounted } from 'vue'
+import KeyboardLetter from './KeyboardLetter.vue'
 
 const LETTER_ROWS = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -14,9 +15,17 @@ const emit = defineEmits<{
   (name: 'submit'): void
 }>()
 
-defineProps<{
-  usedLetters: Record<string, GuessLetterStatus>
-}>()
+const props = withDefaults(
+  defineProps<{
+    usedLetters: Record<string, GuessLetterStatus>
+    canAddLetter?: boolean
+    canDeleteLetter?: boolean
+  }>(),
+  {
+    canAddLetter: true,
+    canDeleteLetter: true,
+  },
+)
 
 onMounted(() => {
   document.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -26,10 +35,12 @@ onMounted(() => {
       return
     }
     if (event.key === 'Backspace') {
+      if (!props.canDeleteLetter) return
       emit('delete')
       return
     }
     if (LETTER_ROWS.flat().includes(event.key.toLowerCase())) {
+      if (!props.canAddLetter) return
       emit('input', event.key.toLowerCase())
     }
   })
@@ -41,84 +52,33 @@ onMounted(() => {
     <div
       v-for="(row, index) in LETTER_ROWS"
       :key="index"
-      class="flex gap-2 justify-center px-4 w-full"
+      class="flex gap-2 justify-center xs:px-4 w-full"
     >
-      <button
+      <KeyboardLetter
         v-if="index === LETTER_ROWS.length - 1"
-        :class="[
-          'touch-manipulation',
-          'flex-1.5',
-          'h-12',
-          'grow',
-          'rounded-sm',
-          'bg-white',
-          'flex',
-          'justify-center',
-          'items-center',
-          'uppercase',
-          'cursor-pointer',
-          'text-sm',
-          'px-1',
-          'outline-1',
-          'outline-black/20',
-          'hover:scale-[1.05]',
-          'active:scale-[0.95]',
-        ]"
+        class="flex-1.5 text-sm"
+        aria-label="Submit guess"
+        :letter="'Enter'"
+        :status="GuessLetterStatus.NotProcessed"
         @click="emit('submit')"
-      >
-        Enter
-      </button>
+      />
       <div v-else-if="index === LETTER_ROWS.length - 2" class="flex-[0.5]"></div>
-      <button
-        v-for="letter in row"
-        :class="[
-          'touch-manipulation',
-          'flex-1',
-          'h-12',
-          'grow',
-          'rounded-sm',
-          'flex',
-          'justify-center',
-          'items-center',
-          'capitalize',
-          'cursor-pointer',
-          'text-xl',
-          'outline-1',
-          'hover:scale-[1.05]',
-          'active:scale-[0.95]',
-
-          usedLetters[letter] == null
-            ? 'bg-white text-black outline-black/20'
-            : 'text-white outline-black',
-          usedLetters[letter] === GuessLetterStatus.Match && 'bg-[#6DA34D]',
-          usedLetters[letter] === GuessLetterStatus.Misplace && 'bg-[#E0DE64]',
-          usedLetters[letter] === GuessLetterStatus.NonExistent && 'bg-[#888]',
-        ]"
+      <KeyboardLetter
+        v-for="(letter, index) in row"
+        :key="index"
+        class="flex-1 text-lg xs:text-xl"
+        :aria-label="`Add ${letter} to the word`"
+        :letter="letter"
+        :status="usedLetters[letter] ?? GuessLetterStatus.NotProcessed"
+        :disabled="!canAddLetter"
         @click="emit('input', letter)"
-      >
-        {{ letter }}
-      </button>
-      <button
+      />
+      <KeyboardLetter
         v-if="index === LETTER_ROWS.length - 1"
-        :class="[
-          'touch-manipulation',
-          'flex-1.5',
-          'h-12',
-          'grow',
-          'rounded-sm',
-          'bg-white',
-          'flex',
-          'justify-center',
-          'items-center',
-          'uppercase',
-          'cursor-pointer',
-          'text-sm',
-          'px-1',
-          'outline-1',
-          'outline-black/20',
-          'hover:scale-[1.05]',
-          'active:scale-[0.95]',
-        ]"
+        class="flex-1.5 text-sm"
+        aria-label="Delete last letter"
+        :status="GuessLetterStatus.NotProcessed"
+        :disabled="!canDeleteLetter"
         @click="emit('delete')"
       >
         <svg
@@ -133,10 +93,8 @@ onMounted(() => {
             d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z"
           ></path>
         </svg>
-      </button>
+      </KeyboardLetter>
       <div v-else-if="index === LETTER_ROWS.length - 2" class="flex-[0.5]"></div>
     </div>
   </div>
 </template>
-
-<style></style>

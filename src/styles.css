@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 
+@theme {
+  --breakpoint-xs: 540px;
+}
+
 .climate-crisis {
   font-family: 'Climate Crisis', sans-serif;
   font-optical-sizing: auto;

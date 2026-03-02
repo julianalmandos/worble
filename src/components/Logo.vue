@@ -24,7 +24,7 @@ export enum Direction {
   <h1
     :class="[
       'flex',
-      direction === Direction.Horizontal ? 'flex-row' : 'flex-col',
+      direction === Direction.Horizontal ? 'flex-row justify-center' : 'flex-col',
       'gap-0',
       animate && 'hover:gap-[0.2em]',
       'z-10',

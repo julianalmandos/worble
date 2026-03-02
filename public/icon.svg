@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 1000 1000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
+    <g transform="matrix(-0.998004,0,0,1.001001,1000.998004,1.001001)">
+        <path d="M1003,148.85L1003,848.15C1003,930.854 935.653,998 852.7,998L151.3,998C68.347,998 1,930.854 1,848.15L1,148.85C1,66.146 68.347,-1 151.3,-1L852.7,-1C935.653,-1 1003,66.146 1003,148.85Z" style="fill:rgb(63,37,158);"/>
+    </g>
+    <g transform="matrix(1,0,0,1,-399.175784,252.288163)">
+        <g transform="matrix(600,0,0,600,1314.375784,472.711837)">
+        </g>
+        <text x="483.976px" y="472.712px" style="font-family:'ClimateCrisis-Regular', 'Climate Crisis';font-size:600px;fill:white;">W</text>
+    </g>
+</svg>

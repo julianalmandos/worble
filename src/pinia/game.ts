@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Language, getRandomWord } from '../utils/words'
 
 export enum GameStatus {
+  Ready = 'Ready',
   Writing = 'Writing',
   Checking = 'Checking',
   FinishedWin = 'FinishedWin',
@@ -11,31 +12,28 @@ export enum GameStatus {
 
 export const useGameStore = defineStore('gameStore', () => {
   const language = ref<Language>(Language.English)
-  const gameStatus = ref<GameStatus>(GameStatus.Writing)
+  const gameStatus = ref<GameStatus>(GameStatus.Ready)
   const currentWord = ref<string>(getRandomWord(language.value))
-  const pastWords = ref<string[]>(['crane', 'cloud', 'thumb', 'train', 'plate'])
+  const pastWords = ref<string[]>([])
 
-  const streakCount = ref<number>(0)
+  const streakCount = computed(() => pastWords.value.length)
 
   const setLanguage = (lang: Language): void => {
     language.value = lang
+    currentWord.value = getRandomWord(language.value)
   }
 
   const setGameStatus = (status: GameStatus): void => {
     gameStatus.value = status
   }
 
-  const setCurrentWord = (word: string): void => {
+  const generateNewWord = (): void => {
     pastWords.value.unshift(currentWord.value)
-    currentWord.value = word
+    currentWord.value = getRandomWord(language.value)
   }
 
-  const increaseStreakCount = (): void => {
-    streakCount.value++
-  }
-
-  const resetStreakCount = (): void => {
-    streakCount.value = 0
+  const resetPastWords = (): void => {
+    pastWords.value = []
   }
 
   return {
@@ -47,8 +45,7 @@ export const useGameStore = defineStore('gameStore', () => {
 
     setLanguage,
     setGameStatus,
-    setCurrentWord,
-    increaseStreakCount,
-    resetStreakCount,
+    generateNewWord,
+    resetPastWords,
   }
 })

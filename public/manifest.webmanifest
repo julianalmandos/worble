@@ -1,0 +1,16 @@
+{
+  "name": "Worble",
+  "short_name": "Worble",
+  "theme_color": "#ffcbe4",
+  "background_color": "#3F259E",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "https://worble.vercel.app/",
+  "description": "Wordle, with a twist.",
+  "orientation": "any",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-mask.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}

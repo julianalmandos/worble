@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import Keyboard from './Keyboard.vue'
-import Snackbar from './Snackbar.vue'
-import Logo from './Logo.vue'
-import Summary from './Summary.vue'
-import Stats from './Stats.vue'
+import GameOverlay from './GameOverlay.vue'
 import { doesWordExist, getRandomWord } from '../utils/words'
-import { computed, ref, watch } from 'vue'
-import { GameStatus, LetterGuess, useGameStore } from '../pinia/game'
+import { computed, ref } from 'vue'
+import { GameStatus, useGameStore } from '../pinia/game'
 import { useSnackbarStore } from '../pinia/snackbar'
 import { storeToRefs } from 'pinia'
+import { useTimer } from '../composables/useTimer'
+import { share } from '../utils/share'
 
 interface LetterGuess {
   letter: string
@@ -18,11 +17,14 @@ interface LetterGuess {
 type WordGuess = LetterGuess[]
 
 const gameStore = useGameStore()
-const { currentWord, gameStatus, language } = storeToRefs(gameStore)
-const { increaseStreakCount, resetStreakCount, setGameStatus, setCurrentWord } = gameStore
+const { currentWord, gameStatus, language, streakCount } = storeToRefs(gameStore)
+const { resetPastWords, setGameStatus, generateNewWord } = gameStore
 
 const snackbarStore = useSnackbarStore()
 const { clearTimeoutMessage } = snackbarStore
+
+const { elapsedTimeMs, formattedElapsedTime, startTimer, pauseTimer, restartTimer, resetTimer } =
+  useTimer()
 
 const currentRound = ref<number>(0)
 const currentGuess = ref<string>('')
@@ -34,23 +36,33 @@ const guesses = ref<WordGuess[]>([])
 
 const shouldShakeLetters = ref<boolean>(false)
 
-const isGameFinished = computed<boolean>(() =>
-  [GameStatus.FinishedWin, GameStatus.FinishedLose].includes(gameStatus.value),
-)
+const xOverlay = computed(() => {
+  return [GameStatus.Ready, GameStatus.FinishedWin, GameStatus.FinishedLose].includes(
+    gameStatus.value,
+  )
+})
+
+const canAddLetter = computed(() => currentGuess.value.length < 5)
+const canDeleteLetter = computed(() => currentGuess.value.length > 0)
 
 const appendLetter = (letter: string): void => {
   if (gameStatus.value !== GameStatus.Writing) return
-  if (currentGuess.value.length === 5) return
+  if (!canAddLetter.value) return
   currentGuess.value += letter
 }
 
 const deleteLetter = (): void => {
   if (gameStatus.value !== GameStatus.Writing) return
-  if (currentGuess.value.length === 0) return
+  if (!canDeleteLetter.value) return
   currentGuess.value = currentGuess.value.slice(0, currentGuess.value.length - 1)
 }
 
 const trackUsedLetter = (letter: string, status: GuessLetterStatus): void => {
+  if (status === GuessLetterStatus.Maybe) {
+    lastUsedLetters.value[letter] = status
+    return
+  }
+
   // Return if the letter already matched before
   if (lastUsedLetters.value[letter] === GuessLetterStatus.Match) return
 
@@ -60,21 +72,29 @@ const trackUsedLetter = (letter: string, status: GuessLetterStatus): void => {
     return
   }
 
-  // If there's no status, track (at this point it's always a no-match)
-  if (usedLetters.value[letter] == null) {
+  // If there's no status or it's a maybe, track
+  if (usedLetters.value[letter] == null || usedLetters.value[letter] === GuessLetterStatus.Maybe) {
     lastUsedLetters.value[letter] = status
   }
 }
 
 const submitGuess = (): void => {
   if (gameStatus.value !== GameStatus.Writing) return
-  if (currentGuess.value.length !== 5) return
-  if (!doesWordExist(language.value, currentGuess.value)) {
-    // Animate
-    // Show snackbar
+  if (currentGuess.value.length !== 5) {
     shouldShakeLetters.value = true
-    console.log('Word does not exist')
     return
+  }
+  if (!doesWordExist(language.value, currentGuess.value)) {
+    shouldShakeLetters.value = true
+    return
+  }
+
+  if (guesses.value.length === 0) {
+    if (elapsedTimeMs.value > 0) {
+      restartTimer()
+    } else {
+      startTimer()
+    }
   }
 
   lastUsedLetters.value = { ...usedLetters.value }
@@ -84,22 +104,21 @@ const submitGuess = (): void => {
     status: GuessLetterStatus.NotProcessed,
   }))
 
-  const currentWordLetterCount = currentWord.value.split('').reduce((acc, letter: string) => {
-    if (acc[letter] == null) acc[letter] = 1
-    else acc[letter]++
-    return acc
-  }, {})
-
-  console.log(guess)
-  console.log(currentWordLetterCount)
+  const currentWordLetterCount = currentWord.value.split('').reduce(
+    (acc, letter: string) => {
+      if (acc[letter] == null) acc[letter] = 1
+      else acc[letter]++
+      return acc
+    },
+    {} as Record<string, number>,
+  )
 
   // Validate guess
-  const misplacedLetters: string[] = []
   guess = guess.map((letterGuess: LetterGuess, index: number) => {
     // If it is a perfect match, we track it.
     if (currentWord.value[index] === letterGuess.letter) {
       trackUsedLetter(letterGuess.letter, GuessLetterStatus.Match)
-      currentWordLetterCount[letterGuess.letter]--
+      ;(currentWordLetterCount[letterGuess.letter] as number) -= 1
       return {
         ...letterGuess,
         status: GuessLetterStatus.Match,
@@ -119,8 +138,6 @@ const submitGuess = (): void => {
     return letterGuess
   })
 
-  console.log(guess)
-
   guess = guess.map((letterGuess: LetterGuess, index: number) => {
     // We skip previously-processed letters
     if ([GuessLetterStatus.Match, GuessLetterStatus.NonExistent].includes(letterGuess.status))
@@ -135,11 +152,65 @@ const submitGuess = (): void => {
         status: GuessLetterStatus.NonExistent,
       }
     }
-    currentWordLetterCount[letterGuess.letter]--
+    ;(currentWordLetterCount[letterGuess.letter] as number) -= 1
     return { ...letterGuess, status: GuessLetterStatus.Misplace }
   })
 
-  console.log(guess)
+  /**
+   * Twist:
+   * - If there are at least 2 non existent letters, choose one of them
+   * and mark as "Maybe". "Maybe".
+   * - If there are 2 or less non existent letters, choose
+   * one of the matches or mismatches ONLY IF non existent in the previous round (no clue was given for them)
+   * - If there's a clue for all 5 letters already, do not show red letters.
+   */
+
+  if (currentGuess.value !== currentWord.value) {
+    function wasClueGivenBefore(letter: string): boolean {
+      return (
+        guesses.value.flat().find((letterGuess: LetterGuess) => letterGuess.letter === letter) !=
+        null
+      )
+    }
+
+    const nonExistentIndices = guess
+      .map((letterGuess: LetterGuess, index: number) =>
+        letterGuess.status === GuessLetterStatus.NonExistent &&
+        !wasClueGivenBefore(letterGuess.letter)
+          ? index
+          : null,
+      )
+      .filter((index) => index !== null) as number[]
+
+    if (nonExistentIndices.length >= 2) {
+      // Choose one of the non existent letters randomly to mark as "Maybe"
+      const randIndex = nonExistentIndices[
+        Math.floor(Math.random() * nonExistentIndices.length)
+      ] as number
+      const letterGuess = guess[randIndex] as LetterGuess
+      guess[randIndex] = { ...letterGuess, status: GuessLetterStatus.Maybe }
+      trackUsedLetter(letterGuess.letter, GuessLetterStatus.Maybe)
+    } else {
+      const matchMisplaceIndices = guess
+        .map((letterGuess: LetterGuess, index: number) =>
+          [GuessLetterStatus.Match, GuessLetterStatus.Misplace, GuessLetterStatus.Maybe].includes(
+            letterGuess.status,
+          ) && !wasClueGivenBefore(letterGuess.letter)
+            ? index
+            : null,
+        )
+        .filter((index) => index !== null) as number[]
+
+      if (matchMisplaceIndices.length > 0) {
+        const randIndex = matchMisplaceIndices[
+          Math.floor(Math.random() * matchMisplaceIndices.length)
+        ] as number
+        const letterGuess = guess[randIndex] as LetterGuess
+        guess[randIndex] = { ...letterGuess, status: GuessLetterStatus.Maybe }
+        trackUsedLetter(letterGuess.letter, GuessLetterStatus.Maybe)
+      }
+    }
+  }
 
   guesses.value.push(guess)
   currentRound.value++
@@ -158,10 +229,11 @@ const onAnimationEnd = (event: AnimationEvent): void => {
 
     // Update game status
     if (previousGuessWord === currentWord.value) {
-      increaseStreakCount()
       setGameStatus(GameStatus.FinishedWin)
+      pauseTimer()
     } else if (currentRound.value === 6) {
       setGameStatus(GameStatus.FinishedLose)
+      pauseTimer()
     } else {
       setGameStatus(GameStatus.Writing)
     }
@@ -170,10 +242,9 @@ const onAnimationEnd = (event: AnimationEvent): void => {
 }
 
 const resetGame = (): void => {
-  setCurrentWord(getRandomWord(language.value))
+  generateNewWord()
   currentRound.value = 0
   currentGuess.value = ''
-  setGameStatus(GameStatus.Writing)
   clearTimeoutMessage()
 
   usedLetters.value = {}
@@ -182,15 +253,36 @@ const resetGame = (): void => {
 }
 
 const continueGame = (): void => {
-  if (gameStatus.value === GameStatus.FinishedWin) {
-    resetGame()
-  } else if (gameStatus.value === GameStatus.FinishedLose) {
-    resetGame()
-    resetStreakCount()
-  }
+  resetGame()
+  setGameStatus(GameStatus.Writing)
 }
 
-watch(language, resetGame)
+const restartGame = (): void => {
+  resetGame()
+  resetPastWords()
+  resetTimer()
+  setGameStatus(GameStatus.Ready)
+}
+
+const shareGame = (): void => {
+  let message = `Worble ${guesses.value.length}/6`
+  const statusToIcon = {
+    [GuessLetterStatus.Match]: '🟩',
+    [GuessLetterStatus.Misplace]: '🟨',
+    [GuessLetterStatus.NonExistent]: '⬛',
+    [GuessLetterStatus.Maybe]: '🟦',
+    [GuessLetterStatus.NotProcessed]: '⬛', // Not used.
+  }
+  for (const guess of guesses.value) {
+    message += `\n${guess.map((letter: LetterGuess) => statusToIcon[letter.status]).join('')}`
+  }
+
+  message += `\n\n+++Final stats+++`
+  message += `\n\nTime: ${formattedElapsedTime.value}`
+  message += `\nStreak: ${streakCount.value}`
+
+  share(message)
+}
 </script>
 
 <script lang="ts">
@@ -198,99 +290,91 @@ export enum GuessLetterStatus {
   Match = 'Match',
   Misplace = 'Misplace',
   NonExistent = 'NonExistent',
+  Maybe = 'Maybe',
   NotProcessed = 'NotProcessed',
 }
 </script>
 
 <template>
-  <main class="flex-1 w-[70%] mx-auto flex flex-col relative justify-center gap-20">
-    <Snackbar />
-    <div class="flex">
-      <div class="flex-1 w-full">
-        <Logo
-          class="w-min text-[#9E2B25] text-[120px] font-bold"
-          :text="'Worble'"
-          :animate="false"
-        />
-        <p class="text-4xl dm-serif-text">Five letters, six tries.</p>
-        <p class="text-4xl dm-serif-text">
-          Look for the <span class="google-sans font-semibold text-[#9E2B25]">मिर्च</span>. It may
-          not belong.
-        </p>
-
-        <Stats class="mt-10" />
-      </div>
+  <div class="flex flex-col justify-center items-center gap-2 text-center shrink-0 relative">
+    <GameOverlay
+      v-if="xOverlay"
+      :elapsed-time="formattedElapsedTime"
+      @continue="continueGame"
+      @share="shareGame"
+      @new-game="restartGame"
+    />
+    <div v-for="round in 6" :key="round" :class="xOverlay ? 'blur-[1px]' : ''">
       <div
-        class="flex-1 flex flex-col justify-center items-center gap-2 text-center shrink-0 dm-serif-text"
+        class="flex gap-2"
+        :class="[round - 1 === currentRound && shouldShakeLetters && 'shake']"
+        @animationend.self="onAnimationEnd"
       >
-        <div v-for="round in 6">
-          <div
-            class="flex gap-2"
-            :class="[round - 1 === currentRound && shouldShakeLetters && 'shake']"
-            @animationend.self="onAnimationEnd"
+        <div
+          v-for="letter in 5"
+          :class="[
+            'size-12 xs:size-16 xl:size-18 2xl:size-20',
+            round - 1 >= currentRound && 'bg-white',
+            round - 1 >= currentRound && 'outline-1',
+            round - 1 >= currentRound && 'outline-black/20',
+            'capitalize',
+            'font-semibold',
+            'text-3xl xs:text-4xl md:text-5xl',
+            'relative',
+          ]"
+          :key="letter"
+        >
+          <!-- Previous round -->
+          <span
+            v-if="round - 1 < currentRound"
+            class="absolute inset-0 previous-letter"
+            :style="{ '--i': letter - 1 }"
+            @animationend="letter === 5 && onAnimationEnd($event)"
           >
-            <div
-              v-for="letter in 5"
+            <span
+              class="previous-letter-front absolute inset-0 z-10 flex justify-center items-center bg-white outline-1 outline-black"
+            >
+              {{ guesses[round - 1]?.[letter - 1]?.letter }}
+            </span>
+            <span
+              class="previous-letter-back absolute inset-0 z-0 flex justify-center items-center outline-1 outline-black text-white"
               :class="[
-                'size-20',
-                round - 1 >= currentRound && 'bg-white',
-                round - 1 >= currentRound && 'outline-1',
-                round - 1 >= currentRound && 'outline-black/20',
-                'rounded-sm',
-                'capitalize',
-                'font-semibold',
-                'text-5xl',
-                'relative',
+                guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.Match &&
+                  'bg-[#6DA34D]',
+                guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.Misplace &&
+                  'bg-[#bebc4c]',
+                guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.NonExistent &&
+                  'bg-[#888]',
+                guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.Maybe &&
+                  'bg-[#3F259E]',
               ]"
             >
-              <!-- Previous round -->
-              <span
-                v-if="round - 1 < currentRound"
-                class="absolute inset-0 previous-letter"
-                :style="{ '--i': letter }"
-                @animationend="letter === 5 && onAnimationEnd($event)"
-              >
-                <span
-                  class="previous-letter-front absolute inset-0 z-10 flex justify-center items-center bg-white rounded-sm outline-1 outline-black"
-                >
-                  {{ guesses[round - 1]?.[letter - 1]?.letter }}
-                </span>
-                <span
-                  class="previous-letter-back absolute inset-0 z-0 flex justify-center items-center rounded-sm outline-1 outline-black text-white"
-                  :class="[
-                    guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.Match &&
-                      'bg-[#6DA34D]',
-                    guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.Misplace &&
-                      'bg-[#E0DE64]',
-                    guesses[round - 1]?.[letter - 1]?.status === GuessLetterStatus.NonExistent &&
-                      'bg-[#888]',
-                  ]"
-                >
-                  {{ guesses[round - 1]?.[letter - 1]?.letter }}
-                </span>
-              </span>
-              <!-- Current round -->
-              <span
-                v-else-if="round - 1 === currentRound && currentGuess[letter - 1] != null"
-                class="letter h-full w-full flex justify-center items-center bg-white rounded-sm outline-1 outline-black"
-              >
-                {{ currentGuess[letter - 1] }}
-              </span>
-            </div>
-          </div>
+              {{ guesses[round - 1]?.[letter - 1]?.letter }}
+            </span>
+          </span>
+          <!-- Current round -->
+          <span
+            v-else-if="round - 1 === currentRound && currentGuess[letter - 1] != null"
+            class="letter h-full w-full flex justify-center items-center bg-white outline-1 outline-black"
+          >
+            {{ currentGuess[letter - 1] }}
+          </span>
         </div>
-
-        <Keyboard
-          class="w-[min(500px,100%)] mt-8 mx-auto"
-          :used-letters="usedLetters"
-          @input="appendLetter"
-          @delete="deleteLetter"
-          @submit="submitGuess"
-        />
       </div>
     </div>
-    <Summary v-if="isGameFinished" @continue="continueGame" />
-  </main>
+
+    <Keyboard
+      class="w-[min(500px,100%)] mt-4 xs:mt-8 mx-auto"
+      :class="xOverlay ? 'blur-[1.5px]' : ''"
+      :used-letters="usedLetters"
+      :inert="xOverlay"
+      :can-add-letter="canAddLetter"
+      :can-delete-letter="canDeleteLetter"
+      @input="appendLetter"
+      @delete="deleteLetter"
+      @submit="submitGuess"
+    />
+  </div>
 </template>
 
 <style lang="css">
