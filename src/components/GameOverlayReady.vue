@@ -5,7 +5,6 @@ import CButton, { CButtonColorPreset } from './CButton.vue'
 import { Language } from '../utils/words'
 import { useTemplateRef, onMounted, ref } from 'vue'
 import CRadioGroup, { type CRadioGroupOption } from './CRadioGroup.vue'
-import RotatingText from './RotatingText.vue'
 
 enum Screen {
   Introduction = 'Introduction',
